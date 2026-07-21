@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "LIBRARY_OWNER", "STUDENT"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "libraryId": { "type": "string" },
+        "seatNumber": { "type": "string" },
+        "feeStatus": { "type": "string", "enum": ["PAID", "PENDING"] },
+        "monthlyFee": { "type": "number" },
+        "phone": { "type": "string" }
+      },
+      "required": ["name", "email", "role", "createdAt"]
+    },
+    "Library": {
+      "title": "Library",
+      "description": "Library details",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "totalSeats": { "type": "number" },
+        "address": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "totalSeats", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Users collection"
+    },
+    "/libraries/{libraryId}": {
+      "schema": { "$ref": "#/entities/Library" },
+      "description": "Libraries collection where document ID is the Library Owner's UID"
+    }
+  }
+}

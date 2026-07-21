@@ -1,0 +1,6 @@
+{
+  "name": "Study Library Management",
+  "description": "A modern web-based Study Library Management System with RBAC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
