@@ -18,7 +18,7 @@ export const firebaseConfig = config;
 const app = initializeApp(config);
 
 // Initialize Firebase services
-const isCustomProject = !!import.meta.env.VITE_FIREBASE_PROJECT_ID;
+const isCustomProject = !!import.meta.env.VITE_FIREBASE_PROJECT_ID || !firebaseConfigData.firestoreDatabaseId;
 export const db = isCustomProject 
   ? getFirestore(app) 
   : getFirestore(app, firebaseConfigData.firestoreDatabaseId);

@@ -96,6 +96,9 @@ export default function App() {
             {/* Staff Routes */}
             <Route path="/staff" element={<ProtectedRoute allowedRoles={["MANAGER", "RECEPTIONIST", "ACCOUNTANT", "LIBRARIAN", "CUSTOM"]}><StaffLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<StaffDashboard />} />
+              <Route path="students" element={<StudentManagement />} />
+              <Route path="seats" element={<SeatManagement />} />
+              <Route path="fees" element={<FeeManagement />} />
               <Route path="visitors" element={<VisitorManagement />} />
               <Route path="notices" element={<NoticeManagement />} />
               <Route index element={<Navigate to="dashboard" replace />} />

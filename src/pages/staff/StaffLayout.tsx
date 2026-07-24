@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, Navigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
-import { LayoutDashboard, UserSquare2, LogOut, Library, Menu, X, ChevronDown, Bell, Contact } from 'lucide-react';
+import { LayoutDashboard, UserSquare2, LogOut, Library, Menu, X, ChevronDown, Bell, Contact, Users, LayoutGrid, IndianRupee } from 'lucide-react';
 
 export const StaffLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -13,8 +13,11 @@ export const StaffLayout: React.FC = () => {
   }
 
   const navItems = [
-    ...(user?.role === 'RECEPTIONIST' ? [{ name: 'Visitors', path: '/staff/visitors', icon: <Contact className="w-5 h-5 mr-3" /> }] : []),
     { name: 'Dashboard', path: '/staff', icon: <LayoutDashboard className="w-5 h-5 mr-3" /> },
+    { name: 'Students', path: '/staff/students', icon: <Users className="w-5 h-5 mr-3" /> },
+    { name: 'Seats', path: '/staff/seats', icon: <LayoutGrid className="w-5 h-5 mr-3" /> },
+    { name: 'Fee Management', path: '/staff/fees', icon: <IndianRupee className="w-5 h-5 mr-3" /> },
+    { name: 'Visitors', path: '/staff/visitors', icon: <Contact className="w-5 h-5 mr-3" /> },
     { name: 'Notice Board', path: '/staff/notices', icon: <Bell className="w-5 h-5 mr-3" /> },
     { name: 'My Profile', path: '/staff/profile', icon: <UserSquare2 className="w-5 h-5 mr-3" /> },
   ];

@@ -57,7 +57,8 @@ interface Seat {
 
 export const StudentManagement: React.FC = () => {
   const { user } = useAuth();
-  const ownerUid = user?.role === 'LIBRARY_OWNER' ? user.id : user?.libraryId;
+  const ownerUid = user?.role === 'LIBRARY_OWNER' ? user.id : (user?.libraryId || user?.id);
+  const canDeleteStudent = user?.role === 'LIBRARY_OWNER' || user?.role === 'SUPER_ADMIN';
   
   const [students, setStudents] = useState<Student[]>([]);
   const [seats, setSeats] = useState<Seat[]>([]);
@@ -325,12 +326,16 @@ export const StudentManagement: React.FC = () => {
   };
 
   const confirmDelete = (student: Student) => {
+    if (!canDeleteStudent) {
+      showToast('error', 'Only Library Owners can delete students permanently.');
+      return;
+    }
     setSelectedStudent(student);
     setIsDeleteModalOpen(true);
   };
 
   const deleteStudent = async () => {
-    if (!user || !selectedStudent) return;
+    if (!user || !selectedStudent || !canDeleteStudent) return;
     
     try {
       setFormSaving(true);
@@ -679,13 +684,15 @@ export const StudentManagement: React.FC = () => {
                         >
                           <Edit className="w-4 h-4" />
                         </button>
-                        <button 
-                          onClick={() => confirmDelete(student)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="Delete Student"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canDeleteStudent && (
+                          <button 
+                            onClick={() => confirmDelete(student)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            title="Delete Student"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

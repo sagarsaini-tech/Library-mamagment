@@ -50,7 +50,8 @@ interface Payment {
 
 export const FeeManagement: React.FC = () => {
   const { user } = useAuth();
-  const ownerUid = user?.role === 'LIBRARY_OWNER' ? user.id : user?.libraryId;
+  const ownerUid = user?.role === 'LIBRARY_OWNER' ? user.id : (user?.libraryId || user?.id);
+  const canDeletePayment = user?.role === 'LIBRARY_OWNER' || user?.role === 'SUPER_ADMIN';
   
   const [students, setStudents] = useState<Student[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);

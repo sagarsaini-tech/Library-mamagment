@@ -29,7 +29,7 @@ interface Seat {
 
 export const SeatManagement: React.FC = () => {
   const { user } = useAuth();
-  const ownerUid = user?.role === 'LIBRARY_OWNER' ? user.id : user?.libraryId;
+  const ownerUid = user?.role === 'LIBRARY_OWNER' ? user.id : (user?.libraryId || user?.id);
   
   const [seats, setSeats] = useState<Seat[]>([]);
   const [loading, setLoading] = useState(true);
