@@ -237,14 +237,17 @@ export const StudentManagement: React.FC = () => {
 
   const saveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ownerUid) return;
+    if (!ownerUid) {
+      showToast('error', 'Library owner ID not found. Please log in again.');
+      return;
+    }
     
-    if (!formData.fullName || !formData.mobile || !formData.seatId) {
-      showToast('error', 'Please fill required fields and assign a seat.');
+    if (!formData.fullName || !formData.mobile) {
+      showToast('error', 'Please fill required fields (Full Name and Mobile Number).');
       return;
     }
 
-    if (createLoginAccount && canCreateAccount && !editingStudent) {
+    if (createLoginAccount && !editingStudent) {
       if (!formData.email) {
         showToast('error', 'Student email is required to create a login account.');
         return;
@@ -261,9 +264,13 @@ export const StudentManagement: React.FC = () => {
       let photoUrl = editingStudent?.photoUrl || '';
       
       if (photoFile) {
-        const storageRef = ref(storage, `libraries/${ownerUid}/students/${Date.now()}_${photoFile.name}`);
-        await uploadBytes(storageRef, photoFile);
-        photoUrl = await getDownloadURL(storageRef);
+        try {
+          const storageRef = ref(storage, `libraries/${ownerUid}/students/${Date.now()}_${photoFile.name}`);
+          await uploadBytes(storageRef, photoFile);
+          photoUrl = await getDownloadURL(storageRef);
+        } catch (uploadErr) {
+          console.warn("Photo upload failed, proceeding with student save:", uploadErr);
+        }
       }
       
       const isNew = !editingStudent;
@@ -272,15 +279,15 @@ export const StudentManagement: React.FC = () => {
       
       let studentUid = '';
 
-      // If Create Login Account is checked and permitted
-      if (isNew && createLoginAccount && canCreateAccount && formData.email) {
+      // If Create Login Account is checked
+      if (isNew && createLoginAccount && formData.email) {
         try {
           const tempApp = initializeApp(firebaseConfig, "TempStudentApp_" + Date.now());
           const tempAuth = getAuth(tempApp);
           
           const userCredential = await createUserWithEmailAndPassword(
             tempAuth,
-            formData.email,
+            formData.email.trim(),
             loginPassword
           );
           
@@ -291,7 +298,7 @@ export const StudentManagement: React.FC = () => {
           await setDoc(doc(db, 'users', studentUid), {
             uid: studentUid,
             studentId: genStudentId,
-            email: formData.email,
+            email: formData.email.trim().toLowerCase(),
             name: formData.fullName,
             fullName: formData.fullName,
             role: 'STUDENT',
@@ -313,9 +320,22 @@ export const StudentManagement: React.FC = () => {
       await runTransaction(db, async (transaction) => {
         const studentRef = doc(db, `libraries/${ownerUid}/students`, studentDocId);
         
-        // Handle Seat Swapping if seat changed
+        // 1. ALL READS FIRST
+        let oldSeatSnap = null;
         if (!isNew && oldSeatId && oldSeatId !== newSeatId) {
           const oldSeatRef = doc(db, `libraries/${ownerUid}/seats`, oldSeatId);
+          oldSeatSnap = await transaction.get(oldSeatRef);
+        }
+
+        let newSeatSnap = null;
+        if (newSeatId) {
+          const newSeatRef = doc(db, `libraries/${ownerUid}/seats`, newSeatId);
+          newSeatSnap = await transaction.get(newSeatRef);
+        }
+
+        // 2. ALL WRITES
+        if (oldSeatSnap && oldSeatSnap.exists()) {
+          const oldSeatRef = doc(db, `libraries/${ownerUid}/seats`, oldSeatId!);
           transaction.update(oldSeatRef, {
             status: 'Vacant',
             studentId: null,
@@ -324,17 +344,8 @@ export const StudentManagement: React.FC = () => {
           });
         }
         
-        if (newSeatId) {
+        if (newSeatSnap && newSeatSnap.exists()) {
           const newSeatRef = doc(db, `libraries/${ownerUid}/seats`, newSeatId);
-          const seatSnap = await transaction.get(newSeatRef);
-          
-          if (!seatSnap.exists()) {
-            throw new Error("Assigned seat does not exist.");
-          }
-          if (seatSnap.data().status !== 'Vacant' && newSeatId !== oldSeatId) {
-            throw new Error("Assigned seat is no longer vacant.");
-          }
-          
           transaction.update(newSeatRef, {
             status: 'Occupied',
             studentId: studentDocId,
@@ -347,26 +358,26 @@ export const StudentManagement: React.FC = () => {
           studentId: genStudentId,
           fullName: formData.fullName,
           photoUrl: photoUrl,
-          gender: formData.gender,
-          dob: formData.dob,
+          gender: formData.gender || 'Male',
+          dob: formData.dob || '',
           mobile: formData.mobile,
-          email: formData.email,
-          aadhaar: formData.aadhaar,
-          address: formData.address,
-          fatherName: formData.fatherName,
-          motherName: formData.motherName,
-          parentMobile: formData.parentMobile,
-          seatId: formData.seatId,
-          seatNumber: formData.seatNumber,
-          joiningDate: formData.joiningDate,
+          email: formData.email ? formData.email.trim().toLowerCase() : '',
+          aadhaar: formData.aadhaar || '',
+          address: formData.address || '',
+          fatherName: formData.fatherName || '',
+          motherName: formData.motherName || '',
+          parentMobile: formData.parentMobile || '',
+          seatId: formData.seatId || '',
+          seatNumber: formData.seatNumber || 'Unassigned',
+          joiningDate: formData.joiningDate || new Date().toISOString().split('T')[0],
           monthlyFee: Number(formData.monthlyFee) || 0,
           securityDeposit: Number(formData.securityDeposit) || 0,
           registrationFee: Number(formData.registrationFee) || 0,
-          feeDueDate: formData.feeDueDate,
-          status: formData.status,
-          feeStatus: formData.feeStatus,
-          emergencyContactName: formData.emergencyContactName,
-          emergencyContactMobile: formData.emergencyContactMobile,
+          feeDueDate: formData.feeDueDate || '',
+          status: formData.status || 'Active',
+          feeStatus: formData.feeStatus || 'Paid',
+          emergencyContactName: formData.emergencyContactName || '',
+          emergencyContactMobile: formData.emergencyContactMobile || '',
           ...(studentUid && { userUid: studentUid, hasLoginAccount: true }),
           updatedAt: serverTimestamp(),
           ...(isNew && { createdAt: serverTimestamp() })
@@ -787,233 +798,236 @@ export const StudentManagement: React.FC = () => {
 
       {/* Add/Edit Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="sticky top-0 z-10 bg-white px-6 py-4 border-b border-slate-100 flex justify-between items-center rounded-t-2xl">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-3 sm:p-6 overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0 rounded-t-2xl">
               <h3 className="text-lg font-bold text-slate-900 flex items-center">
                 {editingStudent ? <Edit className="w-5 h-5 mr-2 text-indigo-600" /> : <UserPlus className="w-5 h-5 mr-2 text-indigo-600" />}
                 {editingStudent ? 'Edit Student Profile' : 'New Admission'}
               </h3>
-              <button onClick={closeAddModal} className="text-slate-400 hover:text-slate-600 transition-colors p-1 bg-slate-50 hover:bg-slate-100 rounded-lg">
+              <button onClick={closeAddModal} type="button" className="text-slate-400 hover:text-slate-600 transition-colors p-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={saveStudent} className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                {/* Column 1: Photo & Basic Details */}
-                <div className="space-y-6">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Personal Information</h4>
-                    <div className="mb-4">
-                      <div className="flex items-center justify-center w-full">
-                        <label className="relative w-32 h-32 rounded-2xl border-2 border-dashed border-slate-300 overflow-hidden flex flex-col items-center justify-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors group">
-                          {photoPreview ? (
-                            <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                          ) : (
-                            <>
-                              <Camera className="w-8 h-8 text-slate-400 mb-2" />
-                              <span className="text-xs text-slate-500 font-medium">Upload Photo</span>
-                            </>
-                          )}
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="text-white text-xs font-semibold">Change</span>
+            <form onSubmit={saveStudent} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  
+                  {/* Column 1: Photo & Basic Details */}
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Personal Information</h4>
+                      <div className="mb-4">
+                        <div className="flex items-center justify-center w-full">
+                          <label className="relative w-32 h-32 rounded-2xl border-2 border-dashed border-slate-300 overflow-hidden flex flex-col items-center justify-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors group">
+                            {photoPreview ? (
+                              <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                            ) : (
+                              <>
+                                <Camera className="w-8 h-8 text-slate-400 mb-2" />
+                                <span className="text-xs text-slate-500 font-medium">Upload Photo</span>
+                              </>
+                            )}
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className="text-white text-xs font-semibold">Change</span>
+                            </div>
+                            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name *</label>
+                          <input type="text" name="fullName" required value={formData.fullName} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Gender</label>
+                            <select name="gender" value={formData.gender} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
+                              <option>Male</option>
+                              <option>Female</option>
+                              <option>Other</option>
+                            </select>
                           </div>
-                          <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
-                        </label>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Date of Birth</label>
+                            <input type="date" name="dob" value={formData.dob} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Mobile Number *</label>
+                          <input type="tel" name="mobile" required value={formData.mobile} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email Address</label>
+                          <input type="email" name="email" value={formData.email} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Aadhaar Number</label>
+                          <input type="text" name="aadhaar" value={formData.aadhaar} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Address</label>
+                          <textarea name="address" rows={2} value={formData.address} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm resize-none" />
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name *</label>
-                        <input type="text" name="fullName" required value={formData.fullName} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
+                  </div>
+
+                  {/* Column 2: Parent & Emergency Details */}
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Parent Details</h4>
+                      <div className="space-y-4">
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Gender</label>
-                          <select name="gender" value={formData.gender} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-                            <option>Male</option>
-                            <option>Female</option>
-                            <option>Other</option>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Father's Name</label>
+                          <input type="text" name="fatherName" value={formData.fatherName} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Mother's Name</label>
+                          <input type="text" name="motherName" value={formData.motherName} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Parent Mobile Number</label>
+                          <input type="tel" name="parentMobile" value={formData.parentMobile} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 mt-6">Emergency Contact</h4>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Contact Name</label>
+                          <input type="text" name="emergencyContactName" value={formData.emergencyContactName} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Contact Mobile</label>
+                          <input type="tel" name="emergencyContactMobile" value={formData.emergencyContactMobile} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Column 3: Library Details */}
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Library & Seat Details</h4>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Assign Seat</label>
+                          <select 
+                            name="seatId" 
+                            value={formData.seatId} 
+                            onChange={handleFormChange} 
+                            className="w-full px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg focus:ring-2 focus:ring-indigo-500 font-semibold text-sm"
+                          >
+                            <option value="">Select a vacant seat (optional)</option>
+                            {editingStudent && editingStudent.seatId && (
+                              <option value={editingStudent.seatId}>{editingStudent.seatNumber} (Current)</option>
+                            )}
+                            {seats.filter(s => s.status === 'Vacant').map(seat => (
+                              <option key={seat.id} value={seat.id}>{seat.seatNumber} ({seat.category}) - ₹{seat.monthlyFee}</option>
+                            ))}
                           </select>
                         </div>
+                        
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Date of Birth</label>
-                          <input type="date" name="dob" value={formData.dob} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Joining Date *</label>
+                          <input type="date" name="joiningDate" required value={formData.joiningDate} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Mobile Number *</label>
-                        <input type="tel" name="mobile" required value={formData.mobile} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email Address</label>
-                        <input type="email" name="email" value={formData.email} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Aadhaar Number</label>
-                        <input type="text" name="aadhaar" value={formData.aadhaar} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Address</label>
-                        <textarea name="address" rows={2} value={formData.address} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm resize-none" />
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Monthly Fee (₹) *</label>
+                            <input type="number" name="monthlyFee" required min="0" value={formData.monthlyFee} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Registration (₹)</label>
+                            <input type="number" name="registrationFee" min="0" value={formData.registrationFee} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Security Dep. (₹)</label>
+                            <input type="number" name="securityDeposit" min="0" value={formData.securityDeposit} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Next Fee Due</label>
+                            <input type="date" name="feeDueDate" value={formData.feeDueDate} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Student Status</label>
+                            <select name="status" value={formData.status} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
+                              <option>Active</option>
+                              <option>Inactive</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Fee Status</label>
+                            <select name="feeStatus" value={formData.feeStatus} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
+                              <option>Paid</option>
+                              <option>Pending</option>
+                            </select>
+                          </div>
+                        </div>
+
                       </div>
                     </div>
                   </div>
+
                 </div>
-
-                {/* Column 2: Parent & Emergency Details */}
-                <div className="space-y-6">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Parent Details</h4>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Father's Name</label>
-                        <input type="text" name="fatherName" value={formData.fatherName} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
+                
+                {/* Create Login Account Option */}
+                {!editingStudent && (
+                  <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3">
+                    <label className="flex items-center space-x-3 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={createLoginAccount} 
+                        onChange={e => setCreateLoginAccount(e.target.checked)} 
+                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm font-bold text-slate-800">Create Login Account</span>
+                    </label>
+                    {createLoginAccount && (
+                      <div className="space-y-3 pt-2">
+                        <p className="text-xs text-slate-600">
+                          The student will be able to log in with their email (<span className="font-semibold">{formData.email || 'enter email above'}</span>) and set password.
+                        </p>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Password for Student Login *
+                          </label>
+                          <input 
+                            type="password" 
+                            required={createLoginAccount}
+                            minLength={6}
+                            placeholder="Minimum 6 characters"
+                            value={loginPassword} 
+                            onChange={e => setLoginPassword(e.target.value)} 
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Mother's Name</label>
-                        <input type="text" name="motherName" value={formData.motherName} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Parent Mobile Number</label>
-                        <input type="tel" name="parentMobile" value={formData.parentMobile} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-                    </div>
+                    )}
                   </div>
-
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 mt-6">Emergency Contact</h4>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Contact Name</label>
-                        <input type="text" name="emergencyContactName" value={formData.emergencyContactName} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Contact Mobile</label>
-                        <input type="tel" name="emergencyContactMobile" value={formData.emergencyContactMobile} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Column 3: Library Details */}
-                <div className="space-y-6">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Library & Seat Details</h4>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Assign Seat *</label>
-                        <select 
-                          name="seatId" 
-                          required 
-                          value={formData.seatId} 
-                          onChange={handleFormChange} 
-                          className="w-full px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg focus:ring-2 focus:ring-indigo-500 font-semibold text-sm"
-                        >
-                          <option value="">Select a vacant seat</option>
-                          {editingStudent && (
-                            <option value={editingStudent.seatId}>{editingStudent.seatNumber} (Current)</option>
-                          )}
-                          {seats.filter(s => s.status === 'Vacant').map(seat => (
-                            <option key={seat.id} value={seat.id}>{seat.seatNumber} ({seat.category}) - ₹{seat.monthlyFee}</option>
-                          ))}
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Joining Date *</label>
-                        <input type="date" name="joiningDate" required value={formData.joiningDate} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Monthly Fee (₹) *</label>
-                          <input type="number" name="monthlyFee" required min="0" value={formData.monthlyFee} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Registration (₹)</label>
-                          <input type="number" name="registrationFee" min="0" value={formData.registrationFee} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Security Dep. (₹)</label>
-                          <input type="number" name="securityDeposit" min="0" value={formData.securityDeposit} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Next Fee Due</label>
-                          <input type="date" name="feeDueDate" value={formData.feeDueDate} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" />
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Student Status</label>
-                          <select name="status" value={formData.status} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-                            <option>Active</option>
-                            <option>Inactive</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Fee Status</label>
-                          <select name="feeStatus" value={formData.feeStatus} onChange={handleFormChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-                            <option>Paid</option>
-                            <option>Pending</option>
-                          </select>
-                        </div>
-                      </div>
-
-                    </div>
-                  </div>
-                </div>
-
+                )}
               </div>
-              
-              {/* Create Login Account Option */}
-              {!editingStudent && (
-                <div className="mt-6 p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3">
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={createLoginAccount} 
-                      onChange={e => setCreateLoginAccount(e.target.checked)} 
-                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                    />
-                    <span className="text-sm font-bold text-slate-800">Create Login Account</span>
-                  </label>
-                  {createLoginAccount && (
-                    <div className="space-y-3 pt-2">
-                      <p className="text-xs text-slate-600">
-                        The student will be able to log in with their email (<span className="font-semibold">{formData.email || 'enter email above'}</span>) and set password.
-                      </p>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Password for Student Login *
-                        </label>
-                        <input 
-                          type="password" 
-                          required={createLoginAccount}
-                          minLength={6}
-                          placeholder="Minimum 6 characters"
-                          value={loginPassword} 
-                          onChange={e => setLoginPassword(e.target.value)} 
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
-                <button type="button" onClick={closeAddModal} className="px-6 py-2.5 border border-slate-200 text-slate-700 font-medium rounded-lg hover:bg-slate-50 transition-colors text-sm">
+              {/* Fixed Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 shrink-0 rounded-b-2xl">
+                <button type="button" onClick={closeAddModal} className="px-6 py-2.5 border border-slate-200 text-slate-700 font-medium rounded-lg hover:bg-white transition-colors text-sm">
                   Cancel
                 </button>
-                <button type="submit" disabled={formSaving} className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors text-sm disabled:opacity-70 flex items-center">
+                <button type="submit" disabled={formSaving} className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors text-sm disabled:opacity-70 flex items-center shadow-sm">
                   {formSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                   {editingStudent ? 'Save Changes' : 'Complete Admission'}
                 </button>
