@@ -973,8 +973,8 @@ export const StudentManagement: React.FC = () => {
 
               </div>
               
-              {/* Create Login Account Option (Owner/Admin only) */}
-              {canCreateAccount && !editingStudent && (
+              {/* Create Login Account Option */}
+              {!editingStudent && (
                 <div className="mt-6 p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3">
                   <label className="flex items-center space-x-3 cursor-pointer">
                     <input 
@@ -988,7 +988,7 @@ export const StudentManagement: React.FC = () => {
                   {createLoginAccount && (
                     <div className="space-y-3 pt-2">
                       <p className="text-xs text-slate-600">
-                        The student will be able to log in with their email (<span className="font-semibold">{formData.email || 'enter email above'}</span>) or Google Login.
+                        The student will be able to log in with their email (<span className="font-semibold">{formData.email || 'enter email above'}</span>) and set password.
                       </p>
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
