@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { db, storage } from '../../lib/firebase';
+import { db, storage, firebaseConfig } from '../../lib/firebase';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { 
-  collection, query, onSnapshot, doc, deleteDoc, 
+  collection, query, onSnapshot, doc, deleteDoc, setDoc,
   serverTimestamp, writeBatch, getDoc, runTransaction 
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -114,6 +116,11 @@ export const StudentManagement: React.FC = () => {
   const [photoPreview, setPhotoPreview] = useState('');
   const [formSaving, setFormSaving] = useState(false);
 
+  // Student Auth Account Creation state
+  const [createLoginAccount, setCreateLoginAccount] = useState(false);
+  const [loginPassword, setLoginPassword] = useState('');
+  const canCreateAccount = user?.role === 'LIBRARY_OWNER' || user?.role === 'SUPER_ADMIN';
+
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   useEffect(() => {
@@ -184,6 +191,8 @@ export const StudentManagement: React.FC = () => {
   };
 
   const openAddModal = (student?: Student) => {
+    setCreateLoginAccount(false);
+    setLoginPassword('');
     if (student) {
       setEditingStudent(student);
       setFormData({
@@ -222,6 +231,8 @@ export const StudentManagement: React.FC = () => {
   const closeAddModal = () => {
     setIsAddModalOpen(false);
     setEditingStudent(null);
+    setCreateLoginAccount(false);
+    setLoginPassword('');
   };
 
   const saveStudent = async (e: React.FormEvent) => {
@@ -231,6 +242,17 @@ export const StudentManagement: React.FC = () => {
     if (!formData.fullName || !formData.mobile || !formData.seatId) {
       showToast('error', 'Please fill required fields and assign a seat.');
       return;
+    }
+
+    if (createLoginAccount && canCreateAccount && !editingStudent) {
+      if (!formData.email) {
+        showToast('error', 'Student email is required to create a login account.');
+        return;
+      }
+      if (!loginPassword || loginPassword.length < 6) {
+        showToast('error', 'Password must be at least 6 characters.');
+        return;
+      }
     }
 
     setFormSaving(true);
@@ -248,6 +270,43 @@ export const StudentManagement: React.FC = () => {
       const studentDocId = isNew ? doc(collection(db, `libraries/${ownerUid}/students`)).id : editingStudent!.id;
       const genStudentId = isNew ? `STU-${Date.now().toString().slice(-6)}` : editingStudent!.studentId;
       
+      let studentUid = '';
+
+      // If Create Login Account is checked and permitted
+      if (isNew && createLoginAccount && canCreateAccount && formData.email) {
+        try {
+          const tempApp = initializeApp(firebaseConfig, "TempStudentApp_" + Date.now());
+          const tempAuth = getAuth(tempApp);
+          
+          const userCredential = await createUserWithEmailAndPassword(
+            tempAuth,
+            formData.email,
+            loginPassword
+          );
+          
+          studentUid = userCredential.user.uid;
+          await deleteApp(tempApp);
+
+          // Create global user doc for authentication & role lookup
+          await setDoc(doc(db, 'users', studentUid), {
+            uid: studentUid,
+            studentId: genStudentId,
+            email: formData.email,
+            name: formData.fullName,
+            fullName: formData.fullName,
+            role: 'STUDENT',
+            status: 'active',
+            libraryId: ownerUid,
+            createdAt: new Date().toISOString()
+          });
+        } catch (authErr: any) {
+          console.error("Auth creation error:", authErr);
+          showToast('error', authErr.message || 'Failed to create student auth account');
+          setFormSaving(false);
+          return;
+        }
+      }
+
       const oldSeatId = editingStudent?.seatId;
       const newSeatId = formData.seatId;
       
@@ -308,6 +367,7 @@ export const StudentManagement: React.FC = () => {
           feeStatus: formData.feeStatus,
           emergencyContactName: formData.emergencyContactName,
           emergencyContactMobile: formData.emergencyContactMobile,
+          ...(studentUid && { userUid: studentUid, hasLoginAccount: true }),
           updatedAt: serverTimestamp(),
           ...(isNew && { createdAt: serverTimestamp() })
         };
@@ -913,6 +973,42 @@ export const StudentManagement: React.FC = () => {
 
               </div>
               
+              {/* Create Login Account Option (Owner/Admin only) */}
+              {canCreateAccount && !editingStudent && (
+                <div className="mt-6 p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3">
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={createLoginAccount} 
+                      onChange={e => setCreateLoginAccount(e.target.checked)} 
+                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm font-bold text-slate-800">Create Login Account</span>
+                  </label>
+                  {createLoginAccount && (
+                    <div className="space-y-3 pt-2">
+                      <p className="text-xs text-slate-600">
+                        The student will be able to log in with their email (<span className="font-semibold">{formData.email || 'enter email above'}</span>) or Google Login.
+                      </p>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Password for Student Login *
+                        </label>
+                        <input 
+                          type="password" 
+                          required={createLoginAccount}
+                          minLength={6}
+                          placeholder="Minimum 6 characters"
+                          value={loginPassword} 
+                          onChange={e => setLoginPassword(e.target.value)} 
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
                 <button type="button" onClick={closeAddModal} className="px-6 py-2.5 border border-slate-200 text-slate-700 font-medium rounded-lg hover:bg-slate-50 transition-colors text-sm">
                   Cancel

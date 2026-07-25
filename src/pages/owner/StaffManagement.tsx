@@ -94,9 +94,13 @@ export const StaffManagement: React.FC = () => {
 
       // 2. Save globally to users collection for routing
       await setDoc(doc(db, 'users', staffUid), {
-        email: formData.email,
+        uid: staffUid,
+        name: formData.fullName,
         fullName: formData.fullName,
-        role: formData.role,
+        email: formData.email,
+        mobile: formData.mobile,
+        role: formData.role.toUpperCase(),
+        status: 'active',
         libraryId: ownerUid,
         createdAt: new Date().toISOString()
       });
