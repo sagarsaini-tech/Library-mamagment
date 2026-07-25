@@ -112,6 +112,8 @@ export const Login: React.FC = () => {
       console.error('Google Sign In error:', err);
       if (err.code === 'auth/popup-closed-by-user') {
         setError('Sign in process was cancelled.');
+      } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        setError(`Google Sign-In is blocked for domain "${window.location.hostname}". To fix this, add "${window.location.hostname}" to Firebase Console → Authentication → Settings → Authorized domains.`);
       } else {
         setError(err.message || 'Failed to sign in with Google.');
       }
