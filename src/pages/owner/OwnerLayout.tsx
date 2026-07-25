@@ -1,11 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, Navigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
+import { db } from '../../lib/firebase';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { LayoutDashboard, Users, UserSquare2, Receipt, Wallet, CalendarCheck, FileBarChart, Settings, LogOut, Library, Bell, ChevronDown, Menu, X, Contact } from 'lucide-react';
 
 export const OwnerLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [libraryName, setLibraryName] = useState<string>('Study Library');
+
+  const ownerUid = user?.role === 'LIBRARY_OWNER' ? user.id : user?.libraryId;
+
+  useEffect(() => {
+    if (!ownerUid) return;
+
+    // Listen to settings config doc
+    const unsubConfig = onSnapshot(doc(db, `libraries/${ownerUid}/settings/config`), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().libraryName) {
+        setLibraryName(docSnap.data().libraryName);
+      } else {
+        // Fallback to main library doc
+        getDoc(doc(db, 'libraries', ownerUid)).then(libSnap => {
+          if (libSnap.exists() && libSnap.data()?.name) {
+            setLibraryName(libSnap.data().name);
+          }
+        }).catch(console.error);
+      }
+    }, (err) => {
+      console.error("Error listening to library settings:", err);
+    });
+
+    return () => unsubConfig();
+  }, [ownerUid]);
 
   if (user?.role !== 'LIBRARY_OWNER') {
     return <Navigate to="/" replace />;
@@ -95,7 +122,7 @@ export const OwnerLayout: React.FC = () => {
               <Menu className="w-6 h-6" />
             </button>
             <h1 className="text-lg sm:text-xl font-semibold text-slate-800 hidden sm:block">
-              Apex Central Library
+              {libraryName || 'Study Library'}
             </h1>
           </div>
           

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
-import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { Link } from 'react-router';
 import { 
   UserSquare2, Building2, CalendarCheck, Receipt, Clock, Bell,
@@ -11,10 +11,11 @@ import {
 export const StudentDashboard: React.FC = () => {
   const { user } = useAuth();
   const [recentNotices, setRecentNotices] = useState<any[]>([]);
+  const [libraryName, setLibraryName] = useState<string>('Study Library');
   
   // Dummy Data
   const studentData = {
-    libraryName: "Apex Central Library",
+    libraryName: libraryName,
     seatNumber: "A-12",
     status: "Active",
     nextFeeDate: "15 Nov 2023",
@@ -28,6 +29,25 @@ export const StudentDashboard: React.FC = () => {
     address: "123 Study Lane, Knowledge City",
     emergencyContact: "+91 9876543211",
   };
+
+  useEffect(() => {
+    if (!user?.libraryId) return;
+
+    // Listen to library settings/config
+    const unsubConfig = onSnapshot(doc(db, `libraries/${user.libraryId}/settings/config`), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().libraryName) {
+        setLibraryName(docSnap.data().libraryName);
+      } else {
+        getDoc(doc(db, 'libraries', user.libraryId!)).then(libSnap => {
+          if (libSnap.exists() && libSnap.data()?.name) {
+            setLibraryName(libSnap.data().name);
+          }
+        }).catch(console.error);
+      }
+    });
+
+    return () => unsubConfig();
+  }, [user?.libraryId]);
 
   useEffect(() => {
     if (!user?.libraryId) return;
